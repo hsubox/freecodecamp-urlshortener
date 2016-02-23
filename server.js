@@ -1,33 +1,62 @@
 'use strict';
 
+// URL Shortener
+// Pass a URL as a parameter -> Receive a shortened URL in the JSON response
+// Visit that shortened URL -> Redirect to original link
+
 var express = require('express');
-var routes = require('./app/routes/index.js');
-var mongoose = require('mongoose');
-var passport = require('passport');
-var session = require('express-session');
-
 var app = express();
-require('dotenv').load();
-require('./app/config/passport')(passport);
 
-mongoose.connect(process.env.MONGO_URI);
+var mongoose = require('mongoose');
+mongoose.connect('mongodb://localhost/test');
+var Links = mongoose.model('Links', {
+  'url': String,
+  'short_url': String
+});
+// Empty the collection to reset
+//Links.remove({}, function(err) { 
+//   console.log('collection removed') 
+//});
 
-app.use('/controllers', express.static(process.cwd() + '/app/controllers'));
-app.use('/public', express.static(process.cwd() + '/public'));
-app.use('/common', express.static(process.cwd() + '/app/common'));
+app.get('/', function(req, res) {
+    res.sendFile(process.cwd() + '/index.html');
+});
 
-app.use(session({
-	secret: 'secretClementine',
-	resave: false,
-	saveUninitialized: true
-}));
+app.get('/new/:url(*)', function(req, res) {
+  var url = req.params.url;
+  if (/https?:\/\/.*\..*/.test(url) || /\?allow=true$/.test(url)) {
+    Links.count({}, function( err, count){
+      count = count.toString();
+      var link = new Links({
+        'url': url,
+        'short_url': count
+      });
+      link.save();
+      
+      res.send(JSON.stringify({
+       "original_url": url,
+       "short_url": "https://" + req.get('host') + "/" + count
+      }));
+    });
+  } else {
+    res.send(JSON.stringify({"error":"URL invalid"}));
+  }
+});
 
-app.use(passport.initialize());
-app.use(passport.session());
-
-routes(app, passport);
+app.get('/:id', function(req, res) {
+  
+  var query = Links.where({'short_url': req.params.id });
+  query.findOne(function (err, link) {
+    if (err) throw err;
+    if (link) {
+      res.redirect(link.url);
+    } else {
+      res.send(JSON.stringify({"error":"No short url found for given input"}));
+    }
+  });
+});
 
 var port = process.env.PORT || 8080;
 app.listen(port,  function () {
-	console.log('Node.js listening on port ' + port + '...');
+	console.log('Server is listening on port ' + port + '.');
 });
